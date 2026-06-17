@@ -1,5 +1,5 @@
 {
-  "name": "bagrinsergiu/monkcms-php",
+  "name": "brizybuilder/monkcms-php",
   "description": "A PHP client for accessing the MonkCMS API in non-website environments.",
   "type": "library",
   "keywords": ["monk", "monkdev", "monkcms", "cms", "ekklesia", "ekklesia360"],
