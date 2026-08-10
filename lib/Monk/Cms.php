@@ -4,6 +4,7 @@
  */
 namespace Monk;
 
+use Requests;
 use Requests_Session;
 use Requests_Exception_HTTP;
 
@@ -250,9 +251,79 @@ class Cms
             throw new Exception($requestsException->getReason(), $requestsException->getCode());
         }
 
-        $responseBody = substr($response->body, 10);
+        return $this->processResponseBody($response->body);
+    }
+
+    /**
+     * Decode a raw API response body.
+     *
+     * @param  string $body
+     * @return array JSON-decoded associative array.
+     */
+    private function processResponseBody($body)
+    {
+        $responseBody = substr($body, 10);
 
         return json_decode($this->replacePlaceholderValues($responseBody), true);
+    }
+
+    /**
+     * Request multiple content queries from the API in parallel.
+     *
+     * Each entry of `$queryParamsList` is an array of query params, the same
+     * format accepted by `get()` when called with an array argument.
+     *
+     * Failed requests are omitted from the result, so callers can fall back
+     * to a sequential `get()` for missing keys.
+     *
+     * @param  array $queryParamsList Key => query params associative array.
+     * @return array Key => JSON-decoded response, keyed as the input.
+     */
+    public function getMultiple(array $queryParamsList)
+    {
+        $config = $this->getConfig();
+
+        // The Curl transport never dispatches `curl.before_send` for
+        // multi-handle subrequests, so the `auth` option is silently ignored
+        // there — send the Authorization header explicitly instead.
+        $headers = array(
+            'Authorization' => 'Basic ' . base64_encode($config['siteId'] . ':' . $config['siteSecret'])
+        );
+
+        $requests = array();
+
+        foreach ($queryParamsList as $key => $queryParams) {
+            $queryParams = array_filter($queryParams);
+            $queryParams['json'] = true;
+
+            $requests[$key] = array(
+                'url'     => $this->buildRequestUrl($queryParams),
+                'headers' => $headers,
+                'type'    => Requests::GET
+            );
+        }
+
+        if (!$requests) {
+            return array();
+        }
+
+        $responses = Requests::request_multiple($requests, $this->getRequestOptions());
+
+        $results = array();
+
+        foreach ($responses as $key => $response) {
+            if (!$response instanceof \WpOrg\Requests\Response || !$response->success) {
+                continue;
+            }
+
+            $decoded = $this->processResponseBody($response->body);
+
+            if ($decoded !== null) {
+                $results[$key] = $decoded;
+            }
+        }
+
+        return $results;
     }
 
     /**
